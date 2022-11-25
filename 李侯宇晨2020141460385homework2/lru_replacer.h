@@ -16,15 +16,15 @@
 #include "buffer/replacer.h"
 
 using namespace std;
-namespace scudb {
+namespace cmudb {
 
 template <typename T> class LRUReplacer : public Replacer<T> {
   struct Node {
     Node() {};
     Node(T val) : val(val) {};
     T val;
-    shared_ptr<Node> prev;
-    shared_ptr<Node> next;
+    shared_ptr<Node> prev;   //指向前一个节点
+    shared_ptr<Node> next;   //指向后一个节点
   };
 public:
   // do not change public interface
@@ -41,9 +41,10 @@ public:
   size_t Size();
 
 private:
-  shared_ptr<Node> head;
-  shared_ptr<Node> tail;
-  unordered_map<T,shared_ptr<Node>> map;
+  shared_ptr<Node> head;   //头节点
+  shared_ptr<Node> tail;    //尾节点
+   //unordered_map里装的是无序的数据，数据通过key来查找
+  unordered_map<T,shared_ptr<Node>> map;  
   mutable mutex latch;
   // add your member variables here
 };

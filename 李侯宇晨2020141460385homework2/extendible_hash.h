@@ -20,7 +20,7 @@
 using namespace std;
 
 
-namespace scudb {
+namespace cmudb {
 
 
 template <typename K, typename V>
@@ -46,13 +46,15 @@ public:
   bool Remove(const K &key) override;
   void Insert(const K &key,const V &value) override;
 
+//为了方便其它函数的实现，增加一个得到桶的id的辅助方法
   int getIdx(const K &key) const;
 
 private:
   // add your own member variables here
   int globalDepth;
-  size_t bucketSize;
+  size_t bucketSize;  //每个桶装能多少数据
   int bucketNum;
+    // buckets是整个顶层的索引，里面装的是每一个桶
   vector<shared_ptr<Bucket>> buckets;
   mutable mutex latch;
 };

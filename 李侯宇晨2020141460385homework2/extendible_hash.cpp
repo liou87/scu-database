@@ -4,7 +4,7 @@
 #include "page/page.h"
 using namespace std;
 
-namespace scudb {
+namespace cmudb {
 
 /*
  * constructor
@@ -24,6 +24,7 @@ ExtendibleHash<K, V>::ExtendibleHash() {
  */
 template <typename K, typename V>
 size_t ExtendibleHash<K, V>::HashKey(const K &key) const{
+   //直接调用库中的哈希函数
   return hash<K>{}(key);
 }
 
@@ -43,10 +44,12 @@ int ExtendibleHash<K, V>::GetGlobalDepth() const{
  */
 template <typename K, typename V>
 int ExtendibleHash<K, V>::GetLocalDepth(int bucket_id) const {
-  //lock_guard<mutex> lck2(latch);
+ //正常情况返回局部深度，如果桶不存在或者。。。。返回-1异常
   if (buckets[bucket_id]) {
-    lock_guard<mutex> lck(buckets[bucket_id]->latch);
-    if (buckets[bucket_id]->kmap.size() == 0) return -1;
+    lock_guard<mutex> lck(buckets[bucket_id]->latch)
+    // 若该桶为空;
+    if (buckets[bucket_id]->kmap.size() == 0) 
+    return -1;
     return buckets[bucket_id]->localDepth;
   }
   return -1;
@@ -69,6 +72,7 @@ bool ExtendibleHash<K, V>::Find(const K &key, V &value) {
 
   int idx = getIdx(key);
   lock_guard<mutex> lck(buckets[idx]->latch);
+  //对应没找到的情况
   if (buckets[idx]->kmap.find(key) != buckets[idx]->kmap.end()) {
     value = buckets[idx]->kmap[key];
     return true;
@@ -77,9 +81,14 @@ bool ExtendibleHash<K, V>::Find(const K &key, V &value) {
   return false;
 }
 
+
+//实现得到桶id的辅助方法
 template <typename K, typename V>
 int ExtendibleHash<K, V>::getIdx(const K &key) const{
   lock_guard<mutex> lck(latch);
+  //利用位计算，速度快
+  // 要找到放在哪个桶里，就是要看地址的后几位是多少，后几位的几根据全局深度来确定
+  //取key的hash值的后globalDepth位
   return HashKey(key) & ((1 << globalDepth) - 1);
 }
 
@@ -107,18 +116,27 @@ bool ExtendibleHash<K, V>::Remove(const K &key) {
 template <typename K, typename V>
 void ExtendibleHash<K, V>::Insert(const K &key, const V &value) {
   int idx = getIdx(key);
-  shared_ptr<Bucket> cur = buckets[idx];
+  shared_ptr<Bucket> cur = buckets[idx];// cur指向待插入信息应该插入的桶
+
+
+    // 循环的目的
+    //分裂后仅靠localDepth前一位可能不能将数据分在两个桶中，所以继续
   while (true) {
     lock_guard<mutex> lck(cur->latch);
     if (cur->kmap.find(key) != cur->kmap.end() || cur->kmap.size() < bucketSize) {
       cur->kmap[key] = value;
       break;
     }
+
+    //接下来是可能发生溢出的情况
+    //需要对比几位
+    // mask用来确定靠哪一位来将原来桶中数据分配到分裂桶中
     int mask = (1 << (cur->localDepth));
     cur->localDepth++;
 
     {
       lock_guard<mutex> lck2(latch);
+       //局部深度大于全局深度，将buckets复制扩大一倍
       if (cur->localDepth > globalDepth) {
 
         size_t length = buckets.size();
@@ -128,9 +146,10 @@ void ExtendibleHash<K, V>::Insert(const K &key, const V &value) {
         globalDepth++;
 
       }
-      bucketNum++;
+      bucketNum++;    //建立一个新桶,新桶的localDepth等于久桶的localDepth+1
       auto newBuc = make_shared<Bucket>(cur->localDepth);
-
+    
+    
       typename map<K, V>::iterator it;
       for (it = cur->kmap.begin(); it != cur->kmap.end(); ) {
         if (HashKey(it->first) & mask) {
@@ -138,6 +157,8 @@ void ExtendibleHash<K, V>::Insert(const K &key, const V &value) {
           it = cur->kmap.erase(it);
         } else it++;
       }
+
+        //给分裂出的桶找一个buckets的位置
       for (size_t i = 0; i < buckets.size(); i++) {
         if (buckets[i] == cur && (i & mask))
           buckets[i] = newBuc;
